@@ -8,7 +8,7 @@ int extraitFichier(char *requete, char *tableauNomFichier, int tailleTableauNomF
 	int i, cpt;
 	int taille = strlen(requete);
 
-	for(i=0 ; i<taille-1 && requete[i+1] != '\r' ; i++){
+	for(i=0 ; i<taille-1 && requete[i+1] != '\n' ; i++){
 		if(requete[i] == '/' && requete[i+1] == ' '){
 			//si on a un '/' suivi d'un espace
 			strcpy(tableauNomFichier, "index.html");
@@ -21,7 +21,7 @@ int extraitFichier(char *requete, char *tableauNomFichier, int tailleTableauNomF
 				tableauNomFichier[cpt] = requete[i+cpt+1];
 				cpt++;
 			}
-			tableauNomFichier[cpt] = '\0';
+			tableauNomFichier[cpt-1] = '\0';
 			return 1;
 		}
 	}
@@ -31,7 +31,7 @@ int extraitFichier(char *requete, char *tableauNomFichier, int tailleTableauNomF
 
 //retourne la taille d'un fichier en octet
 unsigned long longueur_fichier(char *nomFichier){
-	FILE * fichier = fopen(nomFichier, "r");
+	FILE *fichier = fopen(nomFichier, "r");
 
     fseek(fichier, 0, SEEK_END);
     unsigned long taille = (unsigned long)ftell(fichier);
@@ -42,15 +42,15 @@ unsigned long longueur_fichier(char *nomFichier){
 
 //envoie le contenu d'un fichier texte
 int envoyerContenuFichierTexte(char *nomFichier){
-	char* ligne;
+	char ligne[511];
 
     //on ouvre le fichier en lecture seulement
-    FILE* monFichier = fopen(nomFichier,"r");
+    FILE *monFichier = fopen(nomFichier,"r");
 
     //on fait le scanf est vérifie avoir le bon nombre de retour
     while(fscanf(monFichier, "%s\n", ligne) == 1){
 		//on envoit ce qui est lu
-        if(Emission(ligne) != 1) {
+        if(Emission(strcat(ligne,"\n")) != 1) {
 			printf("Erreur d'emission (fichier texte)\n");
 			return 0;
 		}
@@ -60,66 +60,210 @@ int envoyerContenuFichierTexte(char *nomFichier){
 	return 1;
 }
 
-//envoie une réponse 200 OK en http
-int envoyerReponse200HTML(char *nomFichier){
-	char contentLenght[17] = "Content-length: ";
-	int size = longueur_fichier(nomFichier);
-	//on concatène le content-length avec la taille du fichier
-	sprintf(contentLenght, "%d",size);
-	strcat(contentLenght, "\n\n");
+int envoyerContenuFichierBinaire(char *nomFichier){
+	FILE *fichier;
+	unsigned long taille = longueur_fichier(nomFichier);
 
-	//on emet la réponse 200
-	if (Emission("HTTP/1.1 200 OK\n") != 1){
-		printf("Erreur d'emission (réponse 200)\n");
-		return 0;
-	}
+	fichier = fopen(nomFichier, "rb");
+	char *buffer = (char*)malloc(taille);
 
+	fseek(fichier, 0, SEEK_SET);
+	fread(buffer, taille, 1, fichier);
+
+	// On envoie le fichier au client
+	EmissionBinaire(buffer, taille);
+
+	free(buffer);
+	fclose(fichier);
+
+	return 1;
+}
+
+int envoyerContentTypeLength(char *contentLength, char *contentType){
 	//on emet les entêtes d'une page html
-	if(Emission("Content-Type: text/html; charset=UTF-8\n") != 1){
+	if(Emission(contentType) != 1){
 		printf("Erreur d'emission (content-type)\n");
 		return 0;
 	}
 
 	//on emet le content-length
-	if (Emission(contentLenght) == -1){
+	if(Emission(contentLength) != 1){
 		printf("Erreur d'emission (content-length)\n");
 		return 0;
 	}
+
+	return 1;
+}
+
+//envoie une réponse 200 OK en http
+int envoyerReponse200HTML(char *nomFichier){
+	printf("200 HTML\n");
+	char contentLength[31] = "Content-length: ";
+	int size = longueur_fichier(nomFichier);
+	//on concatène le content-length avec la taille du fichier
+	sprintf(contentLength, "%d",size);
+	strcat(contentLength, "\n\n");
+
+	//on emet la réponse 200
+	if(Emission("HTTP/1.1 200 OK\n") != 1){
+		printf("Erreur d'emission (réponse 200)\n");
+		return 0;
+	}
+
+	if(envoyerContentTypeLength(contentLength, "Content-Type: text/html; charset=UTF-8\n") != 1){
+		return 0;
+	}
+
+	envoyerContenuFichierTexte(nomFichier);
+	
+	return 1;
+}
+
+int envoyerReponse200JPG(char *nomFichier){
+	printf("200 JPG\n");
+	char contentLength[31] = "Content-length: ";
+	int size = longueur_fichier(nomFichier);
+	//on concatène le content-length avec la taille du fichier
+	sprintf(contentLength, "%d", size);
+	strcat(contentLength, "\n\n");
+
+	//on emet la réponse 200
+	if(Emission("HTTP/1.1 200 OK\n") != 1){
+		printf("Erreur d'emission (réponse 200)\n");
+		return 0;
+	}
+
+	if(envoyerContentTypeLength(contentLength, "Content-Type: image/jpeg; charset=UTF-8\n") != 1){
+		return 0;
+	}
+
+	envoyerContenuFichierBinaire(nomFichier);
+	
+	return 1;
+}
+
+int envoyerReponse200ICO(char *nomFichier){	
+	printf("200 ICO\n");
+	char contentLength[31] = "Content-length: ";
+	int size = longueur_fichier(nomFichier);
+	//on concatène le content-length avec la taille du fichier
+	sprintf(contentLength, "%d", size);
+	strcat(contentLength, "\n\n");
+
+	//on emet la réponse 200
+	if(Emission("HTTP/1.1 200 OK\n") != 1){
+		printf("Erreur d'emission (réponse 200)\n");
+		return 0;
+	}
+
+	if(envoyerContentTypeLength(contentLength, "Content-Type: image/x-icon; charset=UTF-8\n") != 1){
+		return 0;
+	}
+
+	envoyerContenuFichierBinaire(nomFichier);
+	
 	return 1;
 }
 
 
-int main() {
-	//char* test = (char*) malloc(100 * sizeof(char));
+//envoie une réponse 404 Not FOund en http
+int envoyerReponse404(char *nomFichier){
+	printf("404\n");
+	char contentLength[31] = "Content-length: ";
+	int size = longueur_fichier(nomFichier);
+	//on concatène le content-length avec la taille du fichier
+	sprintf(contentLength, "%d", size);
+	strcat(contentLength, "\n\n");
 
+	//on emet la réponse 200
+	if(Emission("HTTP/1.1 404 Not Found\n") != 1){
+		printf("Erreur d'emission (réponse 404)\n");
+		return 0;
+	}
+
+	if(envoyerContentTypeLength(contentLength, "Content-Type: text/html; charset=UTF-8\n") != 1){
+		return 0;
+	}
+
+	envoyerContenuFichierTexte(nomFichier);
+	
+	return 1;
+}
+
+//envoie une réponse 404 Not FOund en http
+int envoyerReponse500(char *nomFichier){
+	printf("500\n");
+	char contentLength[31] = "Content-length: ";
+	int size = longueur_fichier(nomFichier);
+	//on concatène le content-length avec la taille du fichier
+	sprintf(contentLength, "%d", size);
+	strcat(contentLength, "\n\n");
+
+	//on emet la réponse 200
+	if(Emission("HTTP/1.1 500 Server Error\n") != 1){
+		printf("Erreur d'emission (réponse 500)\n");
+		return 0;
+	}
+
+	if(envoyerContentTypeLength(contentLength, "Content-Type: text/html; charset=UTF-8\n") != 1){
+		return 0;
+	}
+
+	envoyerContenuFichierTexte(nomFichier);
+	
+	return 1;
+}
+
+int isRequeteGet(char *requete){
+	if(requete[0] == 'G' && requete[1] == 'E' && requete[2] == 'T'){
+		return 1;
+	}
+	return 0;
+}
+
+int main() {
 	char *message = NULL;
+	char *nomFichier = malloc(511*sizeof(char));
+	char *extension = malloc(15*sizeof(char));
+	FILE *fichier;
 
 	Initialisation();
 
 	while(1) {
-		int fini = 0;
-	
 		AttenteClient();
-	
-		while(!fini) {
-			message = Reception();
+		message = Reception();
 
-			if(message != NULL) {
-				printf("J'ai recu: %s\n", message);
-				extraitFichier(message, test, 100);
-				printf("Test (requete reelle) : %s\n", test);
-				free(message);
-		
-				if(Emission("Test de message serveur.\n")!=1) {
-					printf("Erreur d'emission\n");
+		if(message != NULL) {
+			printf("J'ai recu: %s\n", message);
+			if(isRequeteGet(message) == 1 && extraitFichier(message, nomFichier, 511) != -1){
+
+				if((fichier = fopen(nomFichier, "r"))){
+					extension = strrchr(nomFichier, '.');
+					if(strcmp(extension, ".jpg") == 0 || strcmp(extension, ".jpeg") == 0){
+						envoyerReponse200JPG(nomFichier);
+					}else if(strcmp(extension, ".ico") == 0){
+						envoyerReponse200ICO(nomFichier);
+					}else{
+						envoyerReponse200HTML(nomFichier);
+					}
+					fclose(fichier);
+				}else{
+					envoyerReponse404("404NotFound.html");
 				}
-			} else {
-				fini = 1;
+
+			}else{
+				envoyerReponse500("500ServerError.html");
+				TerminaisonClient();
 			}
+			free(message);
+
 		}
 
 		TerminaisonClient();
 	}
+
+	free(nomFichier);
+	free(extension);
 
 	return 0;
 }
